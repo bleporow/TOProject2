@@ -1,0 +1,103 @@
+---
+title: "Predicting Investment Grade Credit Ratings"
+subtitle: "TO414 Group Project - Intermediate Deliverable #1"
+author: "Group members: Joaquin Hecquet, Sebastian Sivebaek, Wei Hong, Brooke Leporowski, Patricio Ezdebski and Wei Hong"
+date: "October 22, 2026"
+output:
+  html_document:
+    toc: true
+    theme: united
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## The dataset
+
+When a large company wants to borrow money by issuing bonds, it hires a credit rating agency such as Standard & Poor's or Moody's to judge how likely the company is to pay its debt back. The agency gives a letter grade from AAA (the safest) down to D (in default). Ratings from AAA to BBB are called **investment grade**. Ratings of BB and below are called **junk**.
+
+Our dataset contains 2029 credit ratings given to large US companies traded on the NYSE and Nasdaq between 2010 and 2016. For each rating we have the company, the sector, the agency that gave the rating, the date, and 25 financial ratios of the company at that time. 
+
+```{r}
+rating <- read.csv("corporate_credit_rating.csv")
+str(rating)
+```
+
+## Business question
+
+**Can we predict whether a company is rated investment grade or junk using only its public financial ratios?**
+
+
+## Cleaning the data
+
+### Outcome variable
+
+We create the outcome `ig`: 1 if the rating is investment grade (AAA, AA, A or BBB) and 0 if it is junk (BB, B, CCC, CC, C or D).
+
+```{r}
+table(rating$Rating)
+
+rating$ig <- ifelse(rating$Rating %in% c("AAA", "AA", "A", "BBB"), 1, 0)
+
+round(prop.table(table(rating$ig)), 3)
+```
+
+### Categorical variables
+
+Sector and rating agency are categories, so we turn them into factors. DBRS gave only `r sum(rating$Rating_Agency_Name == "DBRS")` of the ratings, which is too few to estimate an effect, so we group it with Fitch, another small agency.
+
+```{r}
+table(rating$Rating_Agency_Name)
+
+rating$Rating_Agency_Name <- ifelse(rating$Rating_Agency_Name %in% c("DBRS", "Fitch Ratings"),
+                                    "Fitch or DBRS", rating$Rating_Agency_Name)
+
+rating$Sector <- as.factor(rating$Sector)
+rating$Rating_Agency_Name <- as.factor(rating$Rating_Agency_Name)
+```
+
+### Extreme values in the ratios
+
+The financial ratios contain some values that are impossible or clearly wrong. For example, the current ratio can not be negative, and a return on assets of minus 40,000 makes no sense.
+
+```{r}
+ratios <- names(rating)[7:31]
+
+# Median and extreme values of a few ratios
+summary(rating[, c("currentRatio", "returnOnAssets", "assetTurnover", "cashPerShare")])
+```
+
+A few rows like these would distort the models we build later. Instead of deleting these companies, we cap every ratio at its 1st and 99th percentile: values below the 1st percentile are set to the 1st percentile, and values above the 99th percentile are set to the 99th percentile.
+
+```{r}
+cap <- function(x) {
+  lo <- quantile(x, 0.01)
+  hi <- quantile(x, 0.99)
+  pmin(pmax(x, lo), hi)
+}
+
+rating[ratios] <- lapply(rating[ratios], cap)
+
+summary(rating[, c("currentRatio", "returnOnAssets", "assetTurnover", "cashPerShare")])
+```
+
+### Ratios that repeat each other
+
+Some ratios measure almost the same thing. If we keep both versions, the regression can not separate their effects.
+
+```{r}
+round(cor(rating$pretaxProfitMargin, rating$ebitPerRevenue), 3)
+round(cor(rating$debtEquityRatio, rating$companyEquityMultiplier), 3)
+```
+
+The pretax profit margin and EBIT per revenue are almost identical, and the equity multiplier is the debt to equity ratio plus one. We drop `ebitPerRevenue` and `companyEquityMultiplier`.
+
+```{r}
+rating$ebitPerRevenue <- NULL
+rating$companyEquityMultiplier <- NULL
+ratios <- setdiff(ratios, c("ebitPerRevenue", "companyEquityMultiplier"))
+```
+
+We also do not use the original letter grade (`Rating`), because it is the answer itself, and we do not use the company name, ticker symbol or date as predictors.
