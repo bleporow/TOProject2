@@ -29,9 +29,15 @@ plot(pressure)
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 
 
-## Test, is it working?
+#objective: 
+okay chat we are doing the following: 
 
-## Now i have it clear
+1. cleaning the code (good) + splitting the code ( )
+2. logistic (Sebastian)
+3. KNN
+4. K-means
+5. VMS (Wei)
+6. ANN (do ts last)
 
 ---
 title: "Predicting Investment Grade Credit Ratings"
